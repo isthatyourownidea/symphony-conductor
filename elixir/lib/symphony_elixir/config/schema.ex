@@ -5,8 +5,6 @@ defmodule SymphonyElixir.Config.Schema do
 
   import Ecto.Changeset
 
-  alias SymphonyElixir.PathSafety
-
   @primary_key false
 
   @type t :: %__MODULE__{}
@@ -150,30 +148,21 @@ defmodule SymphonyElixir.Config.Schema do
     end
   end
 
-  defmodule Codex do
+  defmodule Claude do
     @moduledoc false
     use Ecto.Schema
     import Ecto.Changeset
 
     @primary_key false
     embedded_schema do
-      field(:command, :string, default: "codex app-server")
-
-      field(:approval_policy, StringOrMap,
-        default: %{
-          "reject" => %{
-            "sandbox_approval" => true,
-            "rules" => true,
-            "mcp_elicitations" => true
-          }
-        }
-      )
-
-      field(:thread_sandbox, :string, default: "workspace-write")
-      field(:turn_sandbox_policy, :map)
+      field(:command, :string, default: "claude")
+      field(:model, :string, default: "sonnet")
+      field(:permission_mode, :string, default: "auto")
+      field(:max_turns, :integer, default: 20)
+      field(:max_budget_usd, :float)
       field(:turn_timeout_ms, :integer, default: 3_600_000)
-      field(:read_timeout_ms, :integer, default: 5_000)
       field(:stall_timeout_ms, :integer, default: 300_000)
+      field(:allowed_tools, {:array, :string}, default: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"])
     end
 
     @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
@@ -183,18 +172,19 @@ defmodule SymphonyElixir.Config.Schema do
         attrs,
         [
           :command,
-          :approval_policy,
-          :thread_sandbox,
-          :turn_sandbox_policy,
+          :model,
+          :permission_mode,
+          :max_turns,
+          :max_budget_usd,
           :turn_timeout_ms,
-          :read_timeout_ms,
-          :stall_timeout_ms
+          :stall_timeout_ms,
+          :allowed_tools
         ],
         empty_values: []
       )
       |> validate_required([:command])
+      |> validate_number(:max_turns, greater_than: 0)
       |> validate_number(:turn_timeout_ms, greater_than: 0)
-      |> validate_number(:read_timeout_ms, greater_than: 0)
       |> validate_number(:stall_timeout_ms, greater_than_or_equal_to: 0)
     end
   end
@@ -267,7 +257,7 @@ defmodule SymphonyElixir.Config.Schema do
     embeds_one(:workspace, Workspace, on_replace: :update, defaults_to_struct: true)
     embeds_one(:worker, Worker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:agent, Agent, on_replace: :update, defaults_to_struct: true)
-    embeds_one(:codex, Codex, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:claude, Claude, on_replace: :update, defaults_to_struct: true)
     embeds_one(:hooks, Hooks, on_replace: :update, defaults_to_struct: true)
     embeds_one(:observability, Observability, on_replace: :update, defaults_to_struct: true)
     embeds_one(:server, Server, on_replace: :update, defaults_to_struct: true)
@@ -289,32 +279,13 @@ defmodule SymphonyElixir.Config.Schema do
     end
   end
 
-  @spec resolve_turn_sandbox_policy(%__MODULE__{}, Path.t() | nil) :: map()
-  def resolve_turn_sandbox_policy(settings, workspace \\ nil) do
-    case settings.codex.turn_sandbox_policy do
-      %{} = policy ->
-        policy
-
-      _ ->
-        workspace
-        |> default_workspace_root(settings.workspace.root)
-        |> expand_local_workspace_root()
-        |> default_turn_sandbox_policy()
-    end
-  end
-
-  @spec resolve_runtime_turn_sandbox_policy(%__MODULE__{}, Path.t() | nil, keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def resolve_runtime_turn_sandbox_policy(settings, workspace \\ nil, opts \\ []) do
-    case settings.codex.turn_sandbox_policy do
-      %{} = policy ->
-        {:ok, policy}
-
-      _ ->
-        workspace
-        |> default_workspace_root(settings.workspace.root)
-        |> default_runtime_turn_sandbox_policy(opts)
-    end
+  @doc """
+  Returns the Claude CLI permission mode from config.
+  Claude Code uses --permission-mode instead of Codex's sandbox policies.
+  """
+  @spec permission_mode(%__MODULE__{}) :: String.t()
+  def permission_mode(settings) do
+    settings.claude.permission_mode
   end
 
   @spec normalize_issue_state(String.t()) :: String.t()
@@ -359,7 +330,7 @@ defmodule SymphonyElixir.Config.Schema do
     |> cast_embed(:workspace, with: &Workspace.changeset/2)
     |> cast_embed(:worker, with: &Worker.changeset/2)
     |> cast_embed(:agent, with: &Agent.changeset/2)
-    |> cast_embed(:codex, with: &Codex.changeset/2)
+    |> cast_embed(:claude, with: &Claude.changeset/2)
     |> cast_embed(:hooks, with: &Hooks.changeset/2)
     |> cast_embed(:observability, with: &Observability.changeset/2)
     |> cast_embed(:server, with: &Server.changeset/2)
@@ -377,13 +348,7 @@ defmodule SymphonyElixir.Config.Schema do
       | root: resolve_path_value(settings.workspace.root, Path.join(System.tmp_dir!(), "symphony_workspaces"))
     }
 
-    codex = %{
-      settings.codex
-      | approval_policy: normalize_keys(settings.codex.approval_policy),
-        turn_sandbox_policy: normalize_optional_map(settings.codex.turn_sandbox_policy)
-    }
-
-    %{settings | tracker: tracker, workspace: workspace, codex: codex}
+    %{settings | tracker: tracker, workspace: workspace}
   end
 
   defp normalize_keys(value) when is_map(value) do
@@ -394,9 +359,6 @@ defmodule SymphonyElixir.Config.Schema do
 
   defp normalize_keys(value) when is_list(value), do: Enum.map(value, &normalize_keys/1)
   defp normalize_keys(value), do: value
-
-  defp normalize_optional_map(nil), do: nil
-  defp normalize_optional_map(value) when is_map(value), do: normalize_keys(value)
 
   defp normalize_key(value) when is_atom(value), do: Atom.to_string(value)
   defp normalize_key(value), do: to_string(value)
@@ -479,47 +441,6 @@ defmodule SymphonyElixir.Config.Schema do
 
   defp normalize_secret_value(_value), do: nil
 
-  defp default_turn_sandbox_policy(workspace) do
-    %{
-      "type" => "workspaceWrite",
-      "writableRoots" => [workspace],
-      "readOnlyAccess" => %{"type" => "fullAccess"},
-      "networkAccess" => false,
-      "excludeTmpdirEnvVar" => false,
-      "excludeSlashTmp" => false
-    }
-  end
-
-  defp default_runtime_turn_sandbox_policy(workspace_root, opts) when is_binary(workspace_root) do
-    if Keyword.get(opts, :remote, false) do
-      {:ok, default_turn_sandbox_policy(workspace_root)}
-    else
-      with expanded_workspace_root <- expand_local_workspace_root(workspace_root),
-           {:ok, canonical_workspace_root} <- PathSafety.canonicalize(expanded_workspace_root) do
-        {:ok, default_turn_sandbox_policy(canonical_workspace_root)}
-      end
-    end
-  end
-
-  defp default_runtime_turn_sandbox_policy(workspace_root, _opts) do
-    {:error, {:unsafe_turn_sandbox_policy, {:invalid_workspace_root, workspace_root}}}
-  end
-
-  defp default_workspace_root(workspace, _fallback) when is_binary(workspace) and workspace != "",
-    do: workspace
-
-  defp default_workspace_root(nil, fallback), do: fallback
-  defp default_workspace_root("", fallback), do: fallback
-  defp default_workspace_root(workspace, _fallback), do: workspace
-
-  defp expand_local_workspace_root(workspace_root)
-       when is_binary(workspace_root) and workspace_root != "" do
-    Path.expand(workspace_root)
-  end
-
-  defp expand_local_workspace_root(_workspace_root) do
-    Path.expand(Path.join(System.tmp_dir!(), "symphony_workspaces"))
-  end
 
   defp format_errors(changeset) do
     changeset
