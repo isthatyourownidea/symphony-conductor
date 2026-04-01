@@ -5,7 +5,7 @@ defmodule SymphonyElixir.Claude.CLI do
   Spawns `claude` as an Elixir Port with `--output-format stream-json`,
   parses output line by line, and reports events via callback.
 
-  Replaces the Codex AppServer JSON-RPC protocol with direct CLI invocation.
+  Replaces the legacy AppServer JSON-RPC protocol with direct CLI invocation.
   """
 
   require Logger

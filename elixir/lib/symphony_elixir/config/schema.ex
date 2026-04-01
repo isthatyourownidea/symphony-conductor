@@ -281,7 +281,7 @@ defmodule SymphonyElixir.Config.Schema do
 
   @doc """
   Returns the Claude CLI permission mode from config.
-  Claude Code uses --permission-mode instead of Codex's sandbox policies.
+  Claude Code uses --permission-mode instead of legacy sandbox policies.
   """
   @spec permission_mode(%__MODULE__{}) :: String.t()
   def permission_mode(settings) do

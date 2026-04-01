@@ -50,19 +50,22 @@ defmodule SymphonyElixir.AgentRunner do
     config = Config.settings!().claude
     identifier = issue.identifier
     workflow_prompt = PromptBuilder.build_prompt(issue, opts)
-    linear_api_key = Config.settings!().tracker.api_token
+    linear_api_key = Config.settings!().tracker.api_key
 
     # Generate workspace files for Claude Code
     Workspace.generate_claude_md(workspace, issue, workflow_prompt)
     Workspace.generate_mcp_json(workspace, linear_api_key)
     Workspace.generate_claude_settings(workspace, [])
 
-    on_event = fn event ->
-      send(update_recipient, {:claude_event, issue.id, event})
-    end
+    on_event =
+      if is_pid(update_recipient) do
+        fn event -> send(update_recipient, {:claude_event, issue.id, event}) end
+      else
+        fn _event -> :ok end
+      end
 
     issue_state_fetcher = Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issue_states_by_ids/1)
-    max_turns = config.max_turns
+    max_turns = Config.settings!().agent.max_turns
     do_run_turns(workspace, issue, config, on_event, issue_state_fetcher, identifier, 1, max_turns)
   end
 
