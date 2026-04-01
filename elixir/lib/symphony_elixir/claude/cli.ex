@@ -30,23 +30,30 @@ defmodule SymphonyElixir.Claude.CLI do
     cwd = Map.fetch!(opts, :cwd)
     on_event = Map.get(opts, :on_event, fn _ -> :ok end)
     env = Map.get(opts, :env, [])
+    timeout = Map.get(opts, :timeout_ms, 3_600_000)
 
     Logger.info("Starting Claude session #{opts.session_id} in #{cwd}")
     Logger.debug("Claude CLI args: #{inspect(args)}")
 
-    port =
-      Port.open({:spawn_executable, System.find_executable(command)}, [
-        :binary,
-        :exit_status,
-        :use_stdio,
-        :stderr_to_stdout,
-        {:args, args},
-        {:cd, cwd},
-        {:env, Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)},
-        {:line, 1_048_576}
-      ])
+    case System.find_executable(command) do
+      nil ->
+        {:error, {:executable_not_found, command}}
 
-    collect_output(port, opts.session_id, on_event, "")
+      executable ->
+        port =
+          Port.open({:spawn_executable, executable}, [
+            :binary,
+            :exit_status,
+            :use_stdio,
+            :stderr_to_stdout,
+            {:args, args},
+            {:cd, cwd},
+            {:env, Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)},
+            {:line, 1_048_576}
+          ])
+
+        collect_output(port, opts.session_id, on_event, "", timeout)
+    end
   end
 
   @doc """
@@ -59,22 +66,29 @@ defmodule SymphonyElixir.Claude.CLI do
     cwd = Map.fetch!(opts, :cwd)
     on_event = Map.get(opts, :on_event, fn _ -> :ok end)
     env = Map.get(opts, :env, [])
+    timeout = Map.get(opts, :timeout_ms, 3_600_000)
 
     Logger.info("Resuming Claude session #{opts.session_id} in #{cwd}")
 
-    port =
-      Port.open({:spawn_executable, System.find_executable(command)}, [
-        :binary,
-        :exit_status,
-        :use_stdio,
-        :stderr_to_stdout,
-        {:args, args},
-        {:cd, cwd},
-        {:env, Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)},
-        {:line, 1_048_576}
-      ])
+    case System.find_executable(command) do
+      nil ->
+        {:error, {:executable_not_found, command}}
 
-    collect_output(port, opts.session_id, on_event, "")
+      executable ->
+        port =
+          Port.open({:spawn_executable, executable}, [
+            :binary,
+            :exit_status,
+            :use_stdio,
+            :stderr_to_stdout,
+            {:args, args},
+            {:cd, cwd},
+            {:env, Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)},
+            {:line, 1_048_576}
+          ])
+
+        collect_output(port, opts.session_id, on_event, "", timeout)
+    end
   end
 
   @doc """
@@ -92,7 +106,6 @@ defmodule SymphonyElixir.Claude.CLI do
   @spec build_args(map()) :: [String.t()]
   def build_args(opts) do
     args = [
-      "--print",
       "-p", Map.fetch!(opts, :prompt),
       "--output-format", "stream-json",
       "--session-id", Map.fetch!(opts, :session_id),
@@ -112,7 +125,6 @@ defmodule SymphonyElixir.Claude.CLI do
   @spec build_resume_args(map()) :: [String.t()]
   def build_resume_args(opts) do
     [
-      "--print",
       "--resume", Map.fetch!(opts, :session_id),
       "-p", Map.fetch!(opts, :prompt),
       "--output-format", "stream-json"
@@ -129,7 +141,7 @@ defmodule SymphonyElixir.Claude.CLI do
 
   # --- Private ---
 
-  defp collect_output(port, session_id, on_event, buffer) do
+  defp collect_output(port, session_id, on_event, buffer, timeout) do
     receive do
       {^port, {:data, {:eol, line}}} ->
         full_line = buffer <> line
@@ -147,14 +159,14 @@ defmodule SymphonyElixir.Claude.CLI do
 
           {:error, message} ->
             Logger.warning("Claude session #{session_id} error: #{message}")
-            collect_output(port, session_id, on_event, "")
+            collect_output(port, session_id, on_event, "", timeout)
 
           _ ->
-            collect_output(port, session_id, on_event, "")
+            collect_output(port, session_id, on_event, "", timeout)
         end
 
       {^port, {:data, {:noeol, chunk}}} ->
-        collect_output(port, session_id, on_event, buffer <> chunk)
+        collect_output(port, session_id, on_event, buffer <> chunk, timeout)
 
       {^port, {:exit_status, code}} ->
         if code == 0 do
@@ -163,7 +175,7 @@ defmodule SymphonyElixir.Claude.CLI do
           {:error, {:exit_code, code}}
         end
     after
-      3_600_000 ->
+      timeout ->
         Port.close(port)
         {:error, :timeout}
     end
@@ -188,7 +200,7 @@ defmodule SymphonyElixir.Claude.CLI do
   end
 
   defp maybe_add_allowed_tools(args, []), do: args
-  defp maybe_add_allowed_tools(args, tools), do: args ++ ["--allowedTools" | tools]
+  defp maybe_add_allowed_tools(args, tools), do: args ++ ["--allowedTools", Enum.join(tools, ",")]
 
   defp maybe_add_flag(args, _flag, nil), do: args
   defp maybe_add_flag(args, flag, value), do: args ++ [flag, to_string(value)]

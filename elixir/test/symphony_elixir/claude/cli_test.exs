@@ -25,7 +25,9 @@ defmodule SymphonyElixir.Claude.CLITest do
       assert "sonnet" in args
       assert "--permission-mode" in args
       assert "auto" in args
-      assert "--print" in args
+      assert "--allowedTools" in args
+      assert "Bash,Read,Write,Edit" in args
+      refute "--print" in args
     end
 
     test "builds args for resume" do

@@ -1262,8 +1262,8 @@ defmodule SymphonyElixir.CoreTest do
       run_lines = Enum.filter(lines, &String.starts_with?(&1, "RUN:"))
       assert length(run_lines) == 2
 
-      # First invocation uses --print (new session)
-      assert Enum.at(run_lines, 0) =~ "--print"
+      # First invocation uses -p (new session)
+      assert Enum.at(run_lines, 0) =~ "-p"
       # Second invocation uses --resume (continuation)
       assert Enum.at(run_lines, 1) =~ "--resume"
     after
