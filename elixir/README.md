@@ -55,8 +55,8 @@ mise exec -- elixir --version
 ## Run
 
 ```bash
-git clone https://github.com/isthatyourownidea/symphony-claude
-cd symphony-claude/elixir
+git clone https://github.com/isthatyourownidea/symphony-conductor
+cd symphony-conductor/elixir
 mise trust
 mise install
 mise exec -- mix setup
