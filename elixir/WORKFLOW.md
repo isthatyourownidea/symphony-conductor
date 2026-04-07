@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "symphony-0c79b11b75ea"
+  project_slug: "your-project-slug"
   active_states:
     - Todo
     - In Progress
@@ -19,12 +19,12 @@ workspace:
   root: ~/code/symphony-workspaces
 hooks:
   after_create: |
-    git clone --depth 1 https://github.com/isthatyourownidea/symphony-conductor .
+    git clone --depth 1 https://github.com/your-org/your-repo .
     if command -v mise >/dev/null 2>&1; then
       cd elixir && mise trust && mise exec -- mix deps.get
     fi
   before_remove: |
-    cd elixir && mise exec -- mix workspace.before_remove
+    # Add any cleanup commands here (e.g., mix workspace.before_remove)
 agent:
   max_concurrent_agents: 3
   max_turns: 15

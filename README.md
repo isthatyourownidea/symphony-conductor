@@ -1,41 +1,117 @@
-# Symphony
+# Symphony Conductor
 
-Symphony turns project work into isolated, autonomous implementation runs, allowing teams to manage
-work instead of supervising coding agents.
+A fork of [OpenAI's Symphony](https://github.com/openai/symphony) that replaces Codex with [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code).
 
-[![Symphony demo video preview](.github/media/symphony-demo-poster.jpg)](.github/media/symphony-demo.mp4)
-
-_In this [demo video](.github/media/symphony-demo.mp4), Symphony monitors a Linear board for work and spawns agents to handle the tasks. The agents complete the tasks and provide proof of work: CI status, PR review feedback, complexity analysis, and walkthrough videos. When accepted, the agents land the PR safely. Engineers do not need to supervise Codex; they can manage the work at a higher level._
+Symphony Conductor is an overnight autonomous coding daemon. It polls Linear for issues, creates isolated git worktrees, spawns Claude Code sessions, and opens PRs for review. You queue work in Linear before bed; PRs are waiting in the morning.
 
 > [!WARNING]
-> Symphony is a low-key engineering preview for testing in trusted environments.
+> This is an engineering preview for trusted environments. The agent runs with `--permission-mode auto` and full shell access inside each worktree.
 
-## Running Symphony
+## How it differs from upstream Symphony
 
-### Requirements
+- Replaced Codex JSON-RPC protocol with Claude Code CLI invocation (~1,300 lines added, ~4,500 deleted)
+- Uses `--permission-mode auto` instead of Codex sandbox/approval policies
+- Generates `CLAUDE.md` and `.mcp.json` per worktree (Linear MCP, GitHub MCP)
+- Includes overnight scheduling via cron + `caffeinate` + `pmset`
+- Prompt template in `WORKFLOW.md` tuned for Claude Code's tool-use patterns
 
-Symphony works best in codebases that have adopted
-[harness engineering](https://openai.com/index/harness-engineering/). Symphony is the next step --
-moving from managing coding agents to managing work that needs to get done.
+## Prerequisites
 
-### Option 1. Make your own
+- **Elixir 1.19+** (via [mise](https://mise.jdx.dev/) -- `mise install` in `elixir/`)
+- **Claude Code CLI** (`claude`) on `$PATH`
+- **Linear API key** (`LINEAR_API_KEY` env var)
+- **GitHub token** (`GITHUB_TOKEN` or `gh auth` session)
 
-Tell your favorite coding agent to build Symphony in a programming language of your choice:
+## Quick start
 
-> Implement Symphony according to the following spec:
-> https://github.com/openai/symphony/blob/main/SPEC.md
+```bash
+git clone https://github.com/isthatyourownidea/symphony-conductor.git
+cd symphony-conductor/elixir
+mise install
+mix deps.get
 
-### Option 2. Use our experimental reference implementation
+# Configure your project
+cp WORKFLOW.md WORKFLOW.md.bak
+# Edit WORKFLOW.md: set project_slug, git clone URL, model, concurrency
 
-Check out [elixir/README.md](elixir/README.md) for instructions on how to set up your environment
-and run the Elixir-based Symphony implementation. You can also ask your favorite coding agent to
-help with the setup:
+# Set env vars
+export LINEAR_API_KEY="lin_api_..."
+export ANTHROPIC_API_KEY="sk-ant-..."
 
-> Set up Symphony for my repository based on
-> https://github.com/openai/symphony/blob/main/elixir/README.md
+# Run
+mix run --no-halt
+```
 
----
+## Configuration
 
-## License
+All configuration lives in `elixir/WORKFLOW.md` as YAML frontmatter:
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `tracker.project_slug` | -- | Your Linear project slug |
+| `agent.max_concurrent_agents` | 3 | Parallel agent sessions |
+| `claude.model` | `sonnet` | Claude model (`sonnet`, `opus`, etc.) |
+| `claude.permission_mode` | `auto` | Always `auto` for unattended use |
+| `claude.max_turns` | 20 | Max tool-use turns per session |
+| `claude.allowed_tools` | Bash, Read, Write, Edit, Glob, Grep | Tools available to the agent |
+| `hooks.after_create` | -- | Shell script run after worktree creation |
+| `hooks.before_remove` | -- | Shell script run before worktree cleanup |
+
+The Markdown body below the frontmatter is the prompt template, rendered per issue with Liquid (`{{ issue.title }}`, etc.).
+
+## Overnight mode
+
+The included `conductor.sh` wraps the daemon for overnight runs:
+
+```bash
+./conductor.sh start   # starts daemon + caffeinate (7h keep-awake)
+./conductor.sh stop    # graceful shutdown
+./conductor.sh status  # check if running + tail logs
+```
+
+For fully unattended nightly runs, combine with cron and `pmset`:
+
+```bash
+# Wake Mac at 11pm, start conductor
+sudo pmset repeat wakeorpoweron MTWRFSU 23:00:00
+crontab -e
+# 0 23 * * * /path/to/symphony-conductor/conductor.sh start
+# 0 6  * * * /path/to/symphony-conductor/conductor.sh stop
+```
+
+## Manual usage
+
+```bash
+cd elixir
+mix run --no-halt          # foreground, Ctrl-C to stop
+mix test                   # run tests
+mix workspace.before_remove # cleanup hook (called automatically)
+```
+
+## Security model
+
+Three layers, outermost first:
+
+1. **PR gate** -- nothing lands without human review. The agent opens PRs; a human merges.
+2. **Worktree isolation** -- each issue gets its own shallow clone. Agents cannot access other worktrees or the host repo.
+3. **Auto mode** -- Claude Code runs with `--permission-mode auto`, meaning it will execute tool calls without confirmation. This is appropriate for trusted codebases in isolated environments.
+
+This is designed for internal/personal use on trusted repos. Do not point it at untrusted issue trackers.
+
+## Project structure
+
+```
+conductor.sh          # start/stop wrapper with caffeinate
+elixir/               # Elixir application
+  WORKFLOW.md         # prompt template + config (the interesting file)
+  lib/                # application source
+  config/             # Elixir config
+  test/               # tests
+SPEC.md               # upstream Symphony specification
+LICENSE               # Apache 2.0 (from upstream)
+NOTICE                # OpenAI copyright notice
+```
+
+## Attribution
+
+This is a derivative work of [OpenAI Symphony](https://github.com/openai/symphony), licensed under the Apache License 2.0. The original LICENSE and NOTICE files are preserved. See [SPEC.md](SPEC.md) for the upstream specification this implementation follows.
