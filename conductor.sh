@@ -5,6 +5,7 @@
 CONDUCTOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 ELIXIR_DIR="$CONDUCTOR_DIR/elixir"
 PID_FILE="$CONDUCTOR_DIR/.conductor.pid"
+CAFE_PID_FILE="$CONDUCTOR_DIR/.caffeinate.pid"
 LOG_FILE="$CONDUCTOR_DIR/conductor.log"
 
 # mise-installed Elixir
@@ -18,9 +19,14 @@ start() {
 
   echo "Starting Conductor at $(date)..."
   cd "$ELIXIR_DIR" || exit 1
+
+  # Keep Mac awake for 7 hours (11pm-6am)
+  caffeinate -i -t 25200 &
+  echo $! > "$CAFE_PID_FILE"
+
   nohup mix run --no-halt >> "$LOG_FILE" 2>&1 &
   echo $! > "$PID_FILE"
-  echo "Conductor started (PID $!, logging to $LOG_FILE)"
+  echo "Conductor started (PID $!, caffeinate keeping Mac awake, logging to $LOG_FILE)"
 }
 
 stop() {
@@ -49,6 +55,12 @@ stop() {
     echo "Conductor was not running (stale PID file)"
   fi
   rm -f "$PID_FILE"
+
+  # Also stop caffeinate
+  if [ -f "$CAFE_PID_FILE" ]; then
+    kill "$(cat "$CAFE_PID_FILE")" 2>/dev/null
+    rm -f "$CAFE_PID_FILE"
+  fi
 }
 
 status() {
