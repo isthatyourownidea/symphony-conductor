@@ -20,8 +20,8 @@ start() {
   echo "Starting Conductor at $(date)..."
   cd "$ELIXIR_DIR" || exit 1
 
-  # Keep Mac awake for 7 hours (11pm-6am)
-  caffeinate -i -t 25200 &
+  # Keep Mac awake for 7 hours (11pm-6am), even with lid closed (requires AC power)
+  caffeinate -s -t 25200 &
   echo $! > "$CAFE_PID_FILE"
 
   nohup mix run --no-halt >> "$LOG_FILE" 2>&1 &
