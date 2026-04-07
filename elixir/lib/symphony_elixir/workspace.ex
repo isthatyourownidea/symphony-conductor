@@ -1,6 +1,6 @@
 defmodule SymphonyElixir.Workspace do
   @moduledoc """
-  Creates isolated per-issue workspaces for parallel Codex agents.
+  Creates isolated per-issue workspaces for parallel Claude agents.
   """
 
   require Logger
@@ -479,5 +479,77 @@ defmodule SymphonyElixir.Workspace do
 
   defp issue_log_context(%{issue_id: issue_id, issue_identifier: issue_identifier}) do
     "issue_id=#{issue_id || "n/a"} issue_identifier=#{issue_identifier || "issue"}"
+  end
+
+  @doc """
+  Generates a CLAUDE.md file in the workspace with issue context and project policy.
+  """
+  @spec generate_claude_md(String.t(), map(), String.t()) :: :ok
+  def generate_claude_md(workspace, issue, workflow_prompt) do
+    content = """
+    # Symphony Agent Instructions
+
+    You are an autonomous agent working on a Linear issue.
+
+    ## Issue
+    - **Identifier**: #{issue.identifier}
+    - **Title**: #{issue.title}
+    - **Description**: #{issue.description || "No description provided"}
+    - **State**: #{issue.state}
+
+    ## Rules
+    - Work exclusively in this directory
+    - Create a feature branch: symphony/#{String.downcase(issue.identifier)}-work
+    - Make small, focused commits with clear messages
+    - Open a pull request when done
+    - Do not merge the PR yourself
+    - Do not modify files outside this worktree
+    - Run tests before opening the PR
+
+    ## Project Context
+    #{workflow_prompt}
+    """
+
+    File.write!(Path.join(workspace, "CLAUDE.md"), content)
+    :ok
+  end
+
+  @doc """
+  Generates a .mcp.json file giving Claude Code access to Linear MCP.
+  """
+  @spec generate_mcp_json(String.t(), String.t()) :: :ok
+  def generate_mcp_json(workspace, linear_api_key) do
+    config = %{
+      "mcpServers" => %{
+        "linear" => %{
+          "type" => "http",
+          "url" => "https://mcp.linear.app/sse",
+          "headers" => %{
+            "Authorization" => "Bearer #{linear_api_key}"
+          }
+        }
+      }
+    }
+
+    File.write!(Path.join(workspace, ".mcp.json"), Jason.encode!(config, pretty: true))
+    :ok
+  end
+
+  @doc """
+  Generates .claude/settings.json with additional permission allows.
+  """
+  @spec generate_claude_settings(String.t(), [String.t()]) :: :ok
+  def generate_claude_settings(workspace, extra_allows \\ []) do
+    settings_dir = Path.join(workspace, ".claude")
+    File.mkdir_p!(settings_dir)
+
+    settings = %{
+      "permissions" => %{
+        "allow" => extra_allows
+      }
+    }
+
+    File.write!(Path.join(settings_dir, "settings.json"), Jason.encode!(settings, pretty: true))
+    :ok
   end
 end

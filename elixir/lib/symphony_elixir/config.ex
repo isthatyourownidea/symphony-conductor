@@ -20,12 +20,6 @@ defmodule SymphonyElixir.Config do
   {% endif %}
   """
 
-  @type codex_runtime_settings :: %{
-          approval_policy: String.t() | map(),
-          thread_sandbox: String.t(),
-          turn_sandbox_policy: map()
-        }
-
   @spec settings() :: {:ok, Schema.t()} | {:error, term()}
   def settings do
     case Workflow.current() do
@@ -61,15 +55,9 @@ defmodule SymphonyElixir.Config do
 
   def max_concurrent_agents_for_state(_state_name), do: settings!().agent.max_concurrent_agents
 
-  @spec codex_turn_sandbox_policy(Path.t() | nil) :: map()
-  def codex_turn_sandbox_policy(workspace \\ nil) do
-    case Schema.resolve_runtime_turn_sandbox_policy(settings!(), workspace) do
-      {:ok, policy} ->
-        policy
-
-      {:error, reason} ->
-        raise ArgumentError, message: "Invalid codex turn sandbox policy: #{inspect(reason)}"
-    end
+  @spec claude_permission_mode() :: String.t()
+  def claude_permission_mode do
+    Schema.permission_mode(settings!())
   end
 
   @spec workflow_prompt() :: String.t()
@@ -98,19 +86,20 @@ defmodule SymphonyElixir.Config do
     end
   end
 
-  @spec codex_runtime_settings(Path.t() | nil, keyword()) ::
-          {:ok, codex_runtime_settings()} | {:error, term()}
-  def codex_runtime_settings(workspace \\ nil, opts \\ []) do
+  @spec claude_settings() :: {:ok, map()} | {:error, term()}
+  def claude_settings do
     with {:ok, settings} <- settings() do
-      with {:ok, turn_sandbox_policy} <-
-             Schema.resolve_runtime_turn_sandbox_policy(settings, workspace, opts) do
-        {:ok,
-         %{
-           approval_policy: settings.codex.approval_policy,
-           thread_sandbox: settings.codex.thread_sandbox,
-           turn_sandbox_policy: turn_sandbox_policy
-         }}
-      end
+      {:ok,
+       %{
+         command: settings.claude.command,
+         model: settings.claude.model,
+         permission_mode: settings.claude.permission_mode,
+         max_turns: settings.claude.max_turns,
+         max_budget_usd: settings.claude.max_budget_usd,
+         turn_timeout_ms: settings.claude.turn_timeout_ms,
+         stall_timeout_ms: settings.claude.stall_timeout_ms,
+         allowed_tools: settings.claude.allowed_tools
+       }}
     end
   end
 
