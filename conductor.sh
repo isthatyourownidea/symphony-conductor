@@ -1,6 +1,12 @@
 #!/bin/bash
 # Symphony Conductor — start/stop daemon
-# Usage: ./conductor.sh start | stop | status
+# Usage: ./conductor.sh start [workflow-path] | stop | status
+#
+# Examples:
+#   ./conductor.sh start                              # uses elixir/WORKFLOW.md
+#   ./conductor.sh start ~/configs/project-a.md       # uses custom workflow
+#   ./conductor.sh stop
+#   ./conductor.sh status
 
 CONDUCTOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 ELIXIR_DIR="$CONDUCTOR_DIR/elixir"
@@ -17,14 +23,29 @@ start() {
     exit 1
   fi
 
+  WORKFLOW_PATH="${1:-}"
+
   echo "Starting Conductor at $(date)..."
+  if [ -n "$WORKFLOW_PATH" ]; then
+    WORKFLOW_PATH="$(cd "$(dirname "$WORKFLOW_PATH")" && pwd)/$(basename "$WORKFLOW_PATH")"
+    echo "Using workflow: $WORKFLOW_PATH"
+    if [ ! -f "$WORKFLOW_PATH" ]; then
+      echo "Error: workflow file not found: $WORKFLOW_PATH"
+      exit 1
+    fi
+  fi
+
   cd "$ELIXIR_DIR" || exit 1
 
   # Keep Mac awake for 7 hours (11pm-6am), even with lid closed (requires AC power)
   caffeinate -s -t 25200 &
   echo $! > "$CAFE_PID_FILE"
 
-  nohup mix run --no-halt >> "$LOG_FILE" 2>&1 &
+  if [ -n "$WORKFLOW_PATH" ]; then
+    SYMPHONY_WORKFLOW_PATH="$WORKFLOW_PATH" nohup mix run --no-halt >> "$LOG_FILE" 2>&1 &
+  else
+    nohup mix run --no-halt >> "$LOG_FILE" 2>&1 &
+  fi
   echo $! > "$PID_FILE"
   echo "Conductor started (PID $!, caffeinate keeping Mac awake, logging to $LOG_FILE)"
 }
@@ -76,11 +97,11 @@ status() {
 }
 
 case "${1:-}" in
-  start)  start ;;
+  start)  start "$2" ;;
   stop)   stop ;;
   status) status ;;
   *)
-    echo "Usage: $0 {start|stop|status}"
+    echo "Usage: $0 {start [workflow-path]|stop|status}"
     exit 1
     ;;
 esac
