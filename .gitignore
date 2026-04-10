@@ -1,0 +1,4 @@
+conductor.log
+cron.log
+.conductor.pid
+.caffeinate.pid
