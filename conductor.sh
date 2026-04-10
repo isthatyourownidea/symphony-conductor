@@ -14,6 +14,9 @@ PID_FILE="$CONDUCTOR_DIR/.conductor.pid"
 CAFE_PID_FILE="$CONDUCTOR_DIR/.caffeinate.pid"
 LOG_FILE="$CONDUCTOR_DIR/conductor.log"
 
+# Load shell profile for env vars (LINEAR_API_KEY, GITHUB_TOKEN, etc.)
+[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null
+
 # mise-installed Elixir
 export PATH="$HOME/.local/share/mise/installs/elixir/1.19.5-otp-28/bin:$HOME/.local/share/mise/installs/erlang/28.4.1/bin:$PATH"
 

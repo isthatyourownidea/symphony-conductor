@@ -9,6 +9,7 @@ defmodule SymphonyElixir.Claude.CLI do
   """
 
   require Logger
+  import Bitwise
 
   alias SymphonyElixir.Claude.OutputParser
 
@@ -108,6 +109,7 @@ defmodule SymphonyElixir.Claude.CLI do
     args = [
       "-p", Map.fetch!(opts, :prompt),
       "--output-format", "stream-json",
+      "--verbose",
       "--session-id", Map.fetch!(opts, :session_id),
       "--model", Map.fetch!(opts, :model),
       "--permission-mode", Map.fetch!(opts, :permission_mode)
@@ -127,16 +129,26 @@ defmodule SymphonyElixir.Claude.CLI do
     [
       "--resume", Map.fetch!(opts, :session_id),
       "-p", Map.fetch!(opts, :prompt),
-      "--output-format", "stream-json"
+      "--output-format", "stream-json",
+      "--verbose"
     ]
   end
 
   @doc """
-  Generates a deterministic session ID from an issue identifier and turn number.
+  Generates a deterministic UUID session ID from an issue identifier and turn number.
+  Uses UUID v5 (SHA-1 name-based) so the same identifier+turn always produces the same UUID,
+  making sessions resumable across daemon restarts.
   """
   @spec session_id(String.t(), integer()) :: String.t()
   def session_id(identifier, turn) do
-    "symphony-#{identifier}-turn-#{turn}"
+    # UUID v5 namespace (randomly generated, fixed for symphony-conductor)
+    namespace = <<0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x47, 0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89>>
+    name = "symphony-#{identifier}-turn-#{turn}"
+    hash = :crypto.hash(:sha, namespace <> name)
+    <<a::32, b::16, _::4, c::12, _::2, d::14, e::48>> = binary_part(hash, 0, 16)
+    # Set version 5 and variant bits
+    :io_lib.format("~8.16.0b-~4.16.0b-5~3.16.0b-~4.16.0b-~12.16.0b", [a, b, c, 0x8000 ||| (d &&& 0x3FFF), e])
+    |> IO.iodata_to_binary()
   end
 
   # --- Private ---

@@ -77,9 +77,19 @@ defmodule SymphonyElixir.Claude.CLITest do
   end
 
   describe "session_id/2" do
-    test "generates deterministic session ID" do
-      assert CLI.session_id("PROJ-123", 1) == "symphony-PROJ-123-turn-1"
-      assert CLI.session_id("PROJ-123", 2) == "symphony-PROJ-123-turn-2"
+    test "generates deterministic UUID" do
+      id1 = CLI.session_id("PROJ-123", 1)
+      id2 = CLI.session_id("PROJ-123", 2)
+
+      # Valid UUID format
+      assert id1 =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      assert id2 =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+
+      # Different turns produce different IDs
+      assert id1 != id2
+
+      # Deterministic — same input produces same output
+      assert CLI.session_id("PROJ-123", 1) == id1
     end
   end
 end
