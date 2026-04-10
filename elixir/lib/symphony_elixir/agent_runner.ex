@@ -75,16 +75,13 @@ defmodule SymphonyElixir.AgentRunner do
     :ok
   end
 
-  defp do_run_turns(workspace, issue, config, on_event, issue_state_fetcher, identifier, turn, max_turns) do
-    session_id = ClaudeCode.session_id(identifier, turn)
-
+  defp do_run_turns(workspace, issue, config, on_event, issue_state_fetcher, identifier, turn, max_turns, last_session_id \\ nil) do
     result =
       if turn == 1 do
         ClaudeCode.run(%{
           command: config.command,
           prompt: "Work on this issue. Read CLAUDE.md for full context.",
           cwd: workspace,
-          session_id: session_id,
           model: config.model,
           permission_mode: config.permission_mode,
           allowed_tools: config.allowed_tools,
@@ -104,7 +101,7 @@ defmodule SymphonyElixir.AgentRunner do
 
         ClaudeCode.resume(%{
           command: config.command,
-          session_id: ClaudeCode.session_id(identifier, 1),
+          session_id: last_session_id,
           prompt: continuation_prompt,
           cwd: workspace,
           on_event: on_event,
@@ -115,12 +112,12 @@ defmodule SymphonyElixir.AgentRunner do
     case result do
       {:ok, session} ->
         Logger.info(
-          "Claude session #{session_id} completed (exit #{session.exit_code}, cost $#{session.cost_usd || "?"})"
+          "Claude session #{session.session_id} completed (exit #{session.exit_code}, cost $#{session.cost_usd || "?"})"
         )
 
         case continue_with_issue?(issue, issue_state_fetcher) do
           {:continue, _refreshed_issue} when turn < max_turns ->
-            do_run_turns(workspace, issue, config, on_event, issue_state_fetcher, identifier, turn + 1, max_turns)
+            do_run_turns(workspace, issue, config, on_event, issue_state_fetcher, identifier, turn + 1, max_turns, session.session_id)
 
           {:continue, _refreshed_issue} ->
             Logger.info("Reached max_turns for #{issue_context(issue)} with issue still active")
@@ -134,7 +131,7 @@ defmodule SymphonyElixir.AgentRunner do
         end
 
       {:error, reason} ->
-        Logger.error("Claude session #{session_id} failed: #{inspect(reason)}")
+        Logger.error("Claude session for #{identifier} turn #{turn} failed: #{inspect(reason)}")
         {:error, reason}
     end
   end

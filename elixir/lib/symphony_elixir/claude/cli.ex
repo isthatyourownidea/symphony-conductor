@@ -33,7 +33,8 @@ defmodule SymphonyElixir.Claude.CLI do
     env = Map.get(opts, :env, [])
     timeout = Map.get(opts, :timeout_ms, 3_600_000)
 
-    Logger.info("Starting Claude session #{opts.session_id} in #{cwd}")
+    session_label = Map.get(opts, :session_id, "new")
+    Logger.info("Starting Claude session #{session_label} in #{cwd}")
     Logger.debug("Claude CLI args: #{inspect(args)}")
 
     case System.find_executable(command) do
@@ -53,7 +54,7 @@ defmodule SymphonyElixir.Claude.CLI do
             {:line, 1_048_576}
           ])
 
-        collect_output(port, opts.session_id, on_event, "", timeout)
+        collect_output(port, session_label, on_event, "", timeout)
     end
   end
 
@@ -110,7 +111,6 @@ defmodule SymphonyElixir.Claude.CLI do
       "-p", Map.fetch!(opts, :prompt),
       "--output-format", "stream-json",
       "--verbose",
-      "--session-id", Map.fetch!(opts, :session_id),
       "--model", Map.fetch!(opts, :model),
       "--permission-mode", Map.fetch!(opts, :permission_mode)
     ]
